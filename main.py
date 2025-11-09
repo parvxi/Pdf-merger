@@ -13,32 +13,31 @@ from reportlab.lib.pagesizes import letter
 import tempfile
 import os
 import subprocess
-import tempfile
-
 import shutil
-import subprocess
 
-if shutil.which("libreoffice"):
-    logger.info("✅ LibreOffice found at: " + shutil.which("libreoffice"))
-else:
-    logger.warning("⚠️ LibreOffice not found. DOCX conversion will fail.")
-
-try:
-    result = subprocess.run(["libreoffice", "--version"], capture_output=True, text=True)
-    logger.info("LibreOffice version: " + result.stdout.strip())
-except Exception as e:
-    logger.warning("Could not get LibreOffice version: " + str(e))
-
-
-# Setup logging
+# ✅ Setup logging first (before any logger calls)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# ✅ Check LibreOffice presence and version
+path = shutil.which("libreoffice")
+if path:
+    logger.info(f"✅ LibreOffice found at: {path}")
+    try:
+        version = subprocess.run(["libreoffice", "--version"], capture_output=True, text=True)
+        logger.info(f"📦 LibreOffice version: {version.stdout.strip()}")
+    except Exception as e:
+        logger.warning(f"⚠️ Could not get LibreOffice version: {e}")
+else:
+    logger.warning("⚠️ LibreOffice not found. DOCX conversion will fail.")
+
+# ✅ Initialize FastAPI app
 app = FastAPI(
     title="DCL PDF Merger API with Auto-Conversion",
     description="Convert Word/Excel to PDF and merge all documents for Petrolube DCL system",
     version="2.0.0"
 )
+
 
 # Enable CORS for Power Automate
 app.add_middleware(
@@ -362,6 +361,7 @@ def health():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
 
