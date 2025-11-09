@@ -15,6 +15,21 @@ import os
 import subprocess
 import tempfile
 
+import shutil
+import subprocess
+
+if shutil.which("libreoffice"):
+    logger.info("✅ LibreOffice found at: " + shutil.which("libreoffice"))
+else:
+    logger.warning("⚠️ LibreOffice not found. DOCX conversion will fail.")
+
+try:
+    result = subprocess.run(["libreoffice", "--version"], capture_output=True, text=True)
+    logger.info("LibreOffice version: " + result.stdout.strip())
+except Exception as e:
+    logger.warning("Could not get LibreOffice version: " + str(e))
+
+
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -347,6 +362,7 @@ def health():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
 
