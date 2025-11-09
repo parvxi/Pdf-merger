@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from typing import List
 import base64
 from io import BytesIO
-from PyPDF2 import PdfMerger
+from pypdf import PdfMerger
 import logging
 import openpyxl
 from openpyxl.drawing.image import Image as XLImage
@@ -361,6 +361,7 @@ def health():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
 
