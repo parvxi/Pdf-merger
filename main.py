@@ -13,6 +13,8 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 import tempfile
 import os
+import subprocess
+import tempfile
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -77,31 +79,54 @@ def detect_file_type(content_bytes: bytes, filename: str) -> str:
     
     return 'unknown'
 
+import subprocess
+import tempfile
+import os
+
 def convert_docx_to_pdf(docx_bytes: bytes) -> bytes:
     """
-    Convert DOCX to PDF using docx2pdf
+    Convert DOCX → PDF using LibreOffice headless mode.
+    Produces identical formatting to Microsoft Word export.
+    Works cross-platform on Linux (Render), macOS, Windows.
     """
-    with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as temp_docx:
+    # Save DOCX to a temporary file
+    with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as temp_docx:
         temp_docx.write(docx_bytes)
         temp_docx_path = temp_docx.name
-    
-    temp_pdf_path = temp_docx_path.replace('.docx', '.pdf')
-    
+
+    # Define output path
+    output_dir = tempfile.gettempdir()
+    pdf_path = os.path.join(output_dir, os.path.basename(temp_docx_path).replace(".docx", ".pdf"))
+
     try:
-        # Convert using docx2pdf
-        docx_to_pdf(temp_docx_path, temp_pdf_path)
-        
-        # Read the PDF
-        with open(temp_pdf_path, 'rb') as pdf_file:
-            pdf_bytes = pdf_file.read()
-        
+        # Call LibreOffice to perform the conversion
+        result = subprocess.run(
+            [
+                "libreoffice",
+                "--headless",            # no GUI
+                "--convert-to", "pdf",   # convert format
+                "--outdir", output_dir,  # output folder
+                temp_docx_path
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True
+        )
+
+        if not os.path.exists(pdf_path):
+            raise RuntimeError(f"LibreOffice failed: {result.stderr.decode('utf-8')}")
+
+        # Read and return PDF bytes
+        with open(pdf_path, "rb") as f:
+            pdf_bytes = f.read()
+
         return pdf_bytes
+
     finally:
-        # Cleanup
-        if os.path.exists(temp_docx_path):
-            os.remove(temp_docx_path)
-        if os.path.exists(temp_pdf_path):
-            os.remove(temp_pdf_path)
+        # Clean up temp files
+        for path in [temp_docx_path, pdf_path]:
+            if os.path.exists(path):
+                os.remove(path)
 
 def convert_xlsx_to_pdf(xlsx_bytes: bytes) -> bytes:
     """
@@ -323,4 +348,5 @@ def health():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
