@@ -1,12 +1,9 @@
 services:
   - type: web
     name: petrolube-pdf-merger
-    env: python
-    buildCommand: |
-      apt-get update
-      apt-get install -y libreoffice
-      pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    env: docker  # ✅ Changed from 'python' to 'docker'
+    dockerfilePath: ./Dockerfile
+    plan: free  # or your plan type
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.0
+      - key: PORT
+        value: 10000
