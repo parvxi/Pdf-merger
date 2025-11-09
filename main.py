@@ -6,6 +6,7 @@ import base64
 from io import BytesIO
 from PyPDF2 import PdfMerger
 import logging
+import os
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -54,24 +55,6 @@ def health_check():
 async def merge_pdfs(request: MergeRequest):
     """
     Merge multiple PDF files into one
-    
-    Request body:
-    {
-        "files": [
-            {"name": "doc1.pdf", "content": "base64_encoded_content"},
-            {"name": "doc2.pdf", "content": "base64_encoded_content"}
-        ],
-        "output_name": "merged.pdf"
-    }
-    
-    Response:
-    {
-        "success": true,
-        "output_name": "merged.pdf",
-        "content": "base64_encoded_merged_pdf",
-        "size_bytes": 12345,
-        "files_merged": 2
-    }
     """
     try:
         # Validate input
@@ -160,6 +143,8 @@ def health():
     """Simple health check"""
     return {"status": "ok"}
 
+# This is important for Render
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
