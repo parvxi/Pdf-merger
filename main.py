@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from typing import List
 import base64
 from io import BytesIO
-from pypdf import PdfMerger
+from pypdf import PdfWriter
 import logging
 import openpyxl
 from openpyxl.drawing.image import Image as XLImage
@@ -262,7 +262,7 @@ async def merge_pdfs(request: MergeRequest):
         logger.info(f"🔄 Starting merge of {len(request.files)} files")
         
         # Create PDF merger
-        merger = PdfMerger()
+        merger = PdfWriter()
         conversions = {}
         
         # Process each file
@@ -361,6 +361,7 @@ def health():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
 
