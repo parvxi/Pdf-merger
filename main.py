@@ -6,7 +6,6 @@ import base64
 from io import BytesIO
 from PyPDF2 import PdfMerger
 import logging
-import magic  # For file type detection
 from docx2pdf import convert as docx_to_pdf
 import openpyxl
 from openpyxl.drawing.image import Image as XLImage
@@ -324,3 +323,4 @@ def health():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
