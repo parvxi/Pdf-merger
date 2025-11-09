@@ -6,6 +6,13 @@ import base64
 from io import BytesIO
 from PyPDF2 import PdfMerger
 import logging
+import magic  # For file type detection
+from docx2pdf import convert as docx_to_pdf
+import openpyxl
+from openpyxl.drawing.image import Image as XLImage
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import letter
+import tempfile
 import os
 
 # Setup logging
@@ -13,9 +20,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="DCL PDF Merger API",
-    description="Merge multiple PDFs into one for Petrolube DCL system",
-    version="1.0.0"
+    title="DCL PDF Merger API with Auto-Conversion",
+    description="Convert Word/Excel to PDF and merge all documents for Petrolube DCL system",
+    version="2.0.0"
 )
 
 # Enable CORS for Power Automate
@@ -27,13 +34,124 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class PDFFile(BaseModel):
+class DocumentFile(BaseModel):
     name: str
-    content: str  # Base64 encoded PDF
+    content: str  # Base64 encoded content (any format)
 
 class MergeRequest(BaseModel):
-    files: List[PDFFile]
+    files: List[DocumentFile]
     output_name: str = "merged_dcl.pdf"
+
+def detect_file_type(content_bytes: bytes, filename: str) -> str:
+    """
+    Detect file type from content and filename
+    Returns: 'pdf', 'docx', 'doc', 'xlsx', 'xls', or 'unknown'
+    """
+    # Check by magic bytes
+    if content_bytes.startswith(b'%PDF'):
+        return 'pdf'
+    elif content_bytes.startswith(b'PK\x03\x04'):  # ZIP-based (docx, xlsx)
+        if filename.lower().endswith('.docx'):
+            return 'docx'
+        elif filename.lower().endswith('.xlsx'):
+            return 'xlsx'
+        else:
+            # Try to detect by content
+            try:
+                # Check for Word document markers
+                if b'word/' in content_bytes[:1000]:
+                    return 'docx'
+                elif b'xl/' in content_bytes[:1000]:
+                    return 'xlsx'
+            except:
+                pass
+    elif content_bytes.startswith(b'\xd0\xcf\x11\xe0'):  # Old Office format
+        if filename.lower().endswith('.doc'):
+            return 'doc'
+        elif filename.lower().endswith('.xls'):
+            return 'xls'
+    
+    # Fallback to extension
+    ext = filename.lower().split('.')[-1]
+    if ext in ['pdf', 'docx', 'doc', 'xlsx', 'xls']:
+        return ext
+    
+    return 'unknown'
+
+def convert_docx_to_pdf(docx_bytes: bytes) -> bytes:
+    """
+    Convert DOCX to PDF using docx2pdf
+    """
+    with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as temp_docx:
+        temp_docx.write(docx_bytes)
+        temp_docx_path = temp_docx.name
+    
+    temp_pdf_path = temp_docx_path.replace('.docx', '.pdf')
+    
+    try:
+        # Convert using docx2pdf
+        docx_to_pdf(temp_docx_path, temp_pdf_path)
+        
+        # Read the PDF
+        with open(temp_pdf_path, 'rb') as pdf_file:
+            pdf_bytes = pdf_file.read()
+        
+        return pdf_bytes
+    finally:
+        # Cleanup
+        if os.path.exists(temp_docx_path):
+            os.remove(temp_docx_path)
+        if os.path.exists(temp_pdf_path):
+            os.remove(temp_pdf_path)
+
+def convert_xlsx_to_pdf(xlsx_bytes: bytes) -> bytes:
+    """
+    Convert XLSX to PDF using openpyxl and reportlab
+    Simple conversion - creates PDF with cell contents
+    """
+    with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as temp_xlsx:
+        temp_xlsx.write(xlsx_bytes)
+        temp_xlsx_path = temp_xlsx.name
+    
+    temp_pdf_path = temp_xlsx_path.replace('.xlsx', '.pdf')
+    
+    try:
+        # Load workbook
+        wb = openpyxl.load_workbook(temp_xlsx_path)
+        
+        # Create PDF
+        c = canvas.Canvas(temp_pdf_path, pagesize=letter)
+        width, height = letter
+        
+        for sheet in wb.worksheets:
+            c.drawString(100, height - 50, f"Sheet: {sheet.title}")
+            y = height - 100
+            
+            for row in sheet.iter_rows(max_row=50, max_col=10):  # Limit size
+                row_data = [str(cell.value) if cell.value else '' for cell in row]
+                text = ' | '.join(row_data)
+                if text.strip():
+                    c.drawString(50, y, text[:100])  # Truncate long text
+                    y -= 20
+                    if y < 50:
+                        c.showPage()
+                        y = height - 50
+            
+            c.showPage()
+        
+        c.save()
+        
+        # Read the PDF
+        with open(temp_pdf_path, 'rb') as pdf_file:
+            pdf_bytes = pdf_file.read()
+        
+        return pdf_bytes
+    finally:
+        # Cleanup
+        if os.path.exists(temp_xlsx_path):
+            os.remove(temp_xlsx_path)
+        if os.path.exists(temp_pdf_path):
+            os.remove(temp_pdf_path)
 
 @app.get("/")
 def health_check():
@@ -42,8 +160,13 @@ def health_check():
     """
     return {
         "status": "healthy",
-        "service": "DCL PDF Merger",
-        "version": "1.0.0",
+        "service": "DCL PDF Merger with Auto-Conversion",
+        "version": "2.0.0",
+        "features": {
+            "supported_formats": ["PDF", "DOCX", "XLSX"],
+            "auto_conversion": True,
+            "merge_pdfs": True
+        },
         "endpoints": {
             "health": "/",
             "docs": "/docs",
@@ -54,56 +177,110 @@ def health_check():
 @app.post("/merge-pdfs")
 async def merge_pdfs(request: MergeRequest):
     """
-    Merge multiple PDF files into one
+    Convert documents to PDF (if needed) and merge into one PDF
+    
+    Supported formats:
+    - PDF (passed through)
+    - DOCX (converted to PDF)
+    - XLSX (converted to PDF)
+    
+    Request body:
+    {
+        "files": [
+            {"name": "invoice.docx", "content": "base64_encoded_content"},
+            {"name": "packing_list.pdf", "content": "base64_encoded_content"},
+            {"name": "data.xlsx", "content": "base64_encoded_content"}
+        ],
+        "output_name": "merged_dcl.pdf"
+    }
+    
+    Response:
+    {
+        "success": true,
+        "output_name": "merged_dcl.pdf",
+        "content": "base64_encoded_merged_pdf",
+        "size_bytes": 12345,
+        "files_merged": 3,
+        "conversions": {
+            "invoice.docx": "converted",
+            "packing_list.pdf": "passed_through",
+            "data.xlsx": "converted"
+        }
+    }
     """
     try:
         # Validate input
         if not request.files:
             raise HTTPException(
                 status_code=400, 
-                detail="No files provided. Please include at least one PDF file."
+                detail="No files provided. Please include at least one file."
             )
         
-        if len(request.files) > 100:
+        if len(request.files) > 50:
             raise HTTPException(
                 status_code=400,
-                detail="Too many files. Maximum 100 files allowed per merge."
+                detail="Too many files. Maximum 50 files allowed per merge."
             )
         
-        logger.info(f"🔄 Starting merge of {len(request.files)} PDF files")
+        logger.info(f"🔄 Starting merge of {len(request.files)} files")
         
         # Create PDF merger
         merger = PdfMerger()
+        conversions = {}
         
-        # Add each PDF
-        for idx, pdf_file in enumerate(request.files):
+        # Process each file
+        for idx, doc_file in enumerate(request.files):
             try:
-                logger.info(f"📄 Processing file {idx + 1}/{len(request.files)}: {pdf_file.name}")
+                logger.info(f"📄 Processing file {idx + 1}/{len(request.files)}: {doc_file.name}")
                 
                 # Decode base64 to bytes
                 try:
-                    pdf_bytes = base64.b64decode(pdf_file.content)
+                    file_bytes = base64.b64decode(doc_file.content)
                 except Exception as e:
-                    raise ValueError(f"Invalid base64 encoding in file: {pdf_file.name}")
+                    raise ValueError(f"Invalid base64 encoding in file: {doc_file.name}")
                 
-                # Validate it's a PDF
-                if not pdf_bytes.startswith(b'%PDF'):
-                    raise ValueError(f"File {pdf_file.name} is not a valid PDF")
+                # Detect file type
+                file_type = detect_file_type(file_bytes, doc_file.name)
+                logger.info(f"🔍 Detected type: {file_type} for {doc_file.name}")
                 
-                # Create stream and add to merger
+                # Convert or pass through
+                if file_type == 'pdf':
+                    # Validate it's a valid PDF
+                    if not file_bytes.startswith(b'%PDF'):
+                        raise ValueError(f"File {doc_file.name} is not a valid PDF")
+                    pdf_bytes = file_bytes
+                    conversions[doc_file.name] = "passed_through"
+                    
+                elif file_type == 'docx':
+                    logger.info(f"📝 Converting DOCX to PDF: {doc_file.name}")
+                    pdf_bytes = convert_docx_to_pdf(file_bytes)
+                    conversions[doc_file.name] = "converted_from_docx"
+                    
+                elif file_type == 'xlsx':
+                    logger.info(f"📊 Converting XLSX to PDF: {doc_file.name}")
+                    pdf_bytes = convert_xlsx_to_pdf(file_bytes)
+                    conversions[doc_file.name] = "converted_from_xlsx"
+                    
+                else:
+                    raise ValueError(
+                        f"Unsupported file type for {doc_file.name}. "
+                        f"Supported formats: PDF, DOCX, XLSX"
+                    )
+                
+                # Add to merger
                 pdf_stream = BytesIO(pdf_bytes)
                 merger.append(pdf_stream)
                 
-                logger.info(f"✅ Added: {pdf_file.name} ({len(pdf_bytes)} bytes)")
+                logger.info(f"✅ Added: {doc_file.name} ({len(pdf_bytes)} bytes)")
                 
             except ValueError as ve:
-                logger.error(f"❌ Validation error for {pdf_file.name}: {str(ve)}")
+                logger.error(f"❌ Validation error for {doc_file.name}: {str(ve)}")
                 raise HTTPException(status_code=400, detail=str(ve))
             except Exception as e:
-                logger.error(f"❌ Error processing {pdf_file.name}: {str(e)}")
+                logger.error(f"❌ Error processing {doc_file.name}: {str(e)}")
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Failed to process {pdf_file.name}: {str(e)}"
+                    detail=f"Failed to process {doc_file.name}: {str(e)}"
                 )
         
         # Write merged PDF to bytes
@@ -122,10 +299,11 @@ async def merge_pdfs(request: MergeRequest):
             "output_name": request.output_name,
             "content": merged_base64,
             "size_bytes": len(merged_bytes),
-            "files_merged": len(request.files)
+            "files_merged": len(request.files),
+            "conversions": conversions
         }
         
-        logger.info(f"✅ Successfully merged {len(request.files)} PDFs ({len(merged_bytes)} bytes)")
+        logger.info(f"✅ Successfully processed and merged {len(request.files)} files ({len(merged_bytes)} bytes)")
         
         return result
         
@@ -143,8 +321,6 @@ def health():
     """Simple health check"""
     return {"status": "ok"}
 
-# This is important for Render
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
