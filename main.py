@@ -118,13 +118,22 @@ def detect_file_type(content_bytes: bytes, filename: str) -> str:
 def convert_image_to_pdf(image_bytes: bytes) -> bytes:
     try:
         img = Image.open(BytesIO(image_bytes))
-        rgb = img.convert("RGB")
+
+        # Create white background
+        if img.mode in ("RGBA", "LA"):
+            bg = Image.new("RGB", img.size, (255, 255, 255))  # white
+            bg.paste(img, mask=img.split()[-1])  # apply alpha mask
+            img = bg
+        else:
+            img = img.convert("RGB")
+
         output = BytesIO()
-        rgb.save(output, format="PDF")
+        img.save(output, format="PDF")
         return output.getvalue()
 
     except Exception as e:
         raise ValueError(f"Failed to convert image: {e}")
+
 
 
 def convert_docx_to_pdf(doc_bytes: bytes) -> bytes:
@@ -286,3 +295,4 @@ def health():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
