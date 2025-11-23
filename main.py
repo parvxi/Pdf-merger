@@ -62,7 +62,9 @@ class DocumentFile(BaseModel):
 class MergeRequest(BaseModel):
     files: List[DocumentFile]
     output_name: str = "merged_dcl.pdf"
-    checklist: dict | None = None
+    checklist: dict | None = None        # Header fields
+    checklistMapped: dict | None = None  # Activity status fields
+
 
 
 
@@ -86,12 +88,12 @@ def replace_placeholders(doc, data):
                     if placeholder in cell.text:
                         cell.text = cell.text.replace(placeholder, str(value))
                         
-def generate_checklist_pdf(checklist: dict) -> bytes:
+def generate_checklist_pdf(full_data: dict) -> bytes:
     template_path = "templates/DCL_Template.docx"
 
     doc = Document(template_path)
 
-    replace_placeholders(doc, checklist)
+    replace_placeholders(doc, full_data)
 
     temp_doc = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
     doc.save(temp_doc.name)
@@ -100,6 +102,7 @@ def generate_checklist_pdf(checklist: dict) -> bytes:
     os.remove(temp_doc.name)
 
     return pdf_bytes
+
 
 
 # ==========================================
@@ -275,9 +278,19 @@ async def merge_pdfs(request: MergeRequest):
     conversions = {}
     
     # 1️⃣ Add the checklist PDF FIRST (if provided)
-    if request.checklist:
-        try:
-            checklist_pdf = generate_checklist_pdf(request.checklist)
+header = request.checklist or {}
+activities = request.checklistMapped or {}
+
+# Merge both dictionaries
+full_checklist_data = { **header, **activities }
+
+if full_checklist_data:
+    try:
+        checklist_pdf = generate_checklist_pdf(full_checklist_data)
+        merger.append(BytesIO(checklist_pdf))
+        logging.info("Checklist PDF added successfully.")
+    except Exception as e:
+        raise HTTPException(500, f"Checklist PDF generation failed: {e}")
             merger.append(BytesIO(checklist_pdf))
             logging.info("Checklist PDF added successfully.")
         except Exception as e:
@@ -342,6 +355,7 @@ def health():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
 
