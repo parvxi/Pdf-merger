@@ -89,30 +89,35 @@ def replace_placeholders(doc, data):
                         cell.text = cell.text.replace(placeholder, str(value))
                         
 def generate_checklist_pdf(full_data: dict) -> bytes:
-    
-    template_path = "templates/DCL_Template.docx"  # define first
+    template_path = "templates/DCL_Template.docx"
 
-    # 🔥 verify template exists
+    # Check file exists AFTER defining the variable
     if not os.path.exists(template_path):
         raise FileNotFoundError(f"Template missing: {template_path}")
 
-    # load template
     doc = Document(template_path)
 
-    # replace fields
     replace_placeholders(doc, full_data)
 
-    # export to temp doc
     temp_doc = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
     doc.save(temp_doc.name)
 
-    # convert docx to pdf
     pdf_bytes = convert_docx_to_pdf(open(temp_doc.name, "rb").read())
-
-    # clean up temp file
     os.remove(temp_doc.name)
 
     return pdf_bytes
+
+
+
+@app.get("/debug-template")
+def debug_template():
+    path = "templates/DCL_Template.docx"
+    return {
+        "exists": os.path.exists(path),
+        "absolute_path": os.path.abspath(path),
+        "cwd": os.getcwd(),
+        "dir_listing": os.listdir("templates") if os.path.exists("templates") else "templates folder missing"
+    }
 
 
 
@@ -372,6 +377,7 @@ def health():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
 
