@@ -68,17 +68,30 @@ class MergeRequest(BaseModel):
 
 from docx import Document
 
+
+def replace_placeholders(doc, data):
+    # Replace in normal paragraphs
+    for p in doc.paragraphs:
+        for key, value in data.items():
+            placeholder = "{{" + key + "}}"
+            if placeholder in p.text:
+                p.text = p.text.replace(placeholder, str(value))
+
+    # Replace inside tables
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for key, value in data.items():
+                    placeholder = "{{" + key + "}}"
+                    if placeholder in cell.text:
+                        cell.text = cell.text.replace(placeholder, str(value))
+                        
 def generate_checklist_pdf(checklist: dict) -> bytes:
     template_path = "templates/DCL_Template.docx"
 
     doc = Document(template_path)
 
-    # Replace placeholders {{field}}
-    for p in doc.paragraphs:
-        for key, value in checklist.items():
-            placeholder = "{{" + key + "}}"
-            if placeholder in p.text:
-                p.text = p.text.replace(placeholder, str(value))
+    replace_placeholders(doc, checklist)
 
     temp_doc = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
     doc.save(temp_doc.name)
@@ -87,6 +100,7 @@ def generate_checklist_pdf(checklist: dict) -> bytes:
     os.remove(temp_doc.name)
 
     return pdf_bytes
+
 
 # ==========================================
 # File Type Detection
@@ -328,5 +342,6 @@ def health():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
