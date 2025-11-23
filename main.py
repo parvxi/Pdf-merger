@@ -264,7 +264,6 @@ def convert_xlsx_to_pdf(xlsx_bytes: bytes) -> bytes:
         if os.path.exists(pdf_path):
             os.remove(pdf_path)
 
-
 # ==========================================
 # Merge Endpoint
 # ==========================================
@@ -276,26 +275,29 @@ async def merge_pdfs(request: MergeRequest):
 
     merger = PdfWriter()
     conversions = {}
-    
-    # 1️⃣ Add the checklist PDF FIRST (if provided)
-header = request.checklist or {}
-activities = request.checklistMapped or {}
 
-# Merge both dictionaries
-full_checklist_data = { **header, **activities }
+    # ----------------------------------------------
+    # 1️⃣ Build full checklist data (header + items)
+    # ----------------------------------------------
+    header = request.checklist or {}
+    activities = request.checklistMapped or {}
 
-if full_checklist_data:
-    try:
-        checklist_pdf = generate_checklist_pdf(full_checklist_data)
-        merger.append(BytesIO(checklist_pdf))
-        logging.info("Checklist PDF added successfully.")
-    except Exception as e:
-        raise HTTPException(500, f"Checklist PDF generation failed: {e}")
+    full_checklist_data = { **header, **activities }
+
+    # ----------------------------------------------
+    # 2️⃣ Insert checklist PDF first (if exists)
+    # ----------------------------------------------
+    if full_checklist_data:
+        try:
+            checklist_pdf = generate_checklist_pdf(full_checklist_data)
             merger.append(BytesIO(checklist_pdf))
             logging.info("Checklist PDF added successfully.")
         except Exception as e:
             raise HTTPException(500, f"Checklist PDF generation failed: {e}")
-            
+
+    # ----------------------------------------------
+    # 3️⃣ Convert and append all documents
+    # ----------------------------------------------
     for f in request.files:
 
         try:
@@ -330,7 +332,9 @@ if full_checklist_data:
 
         merger.append(BytesIO(output))
 
-    # Final merged PDF
+    # ----------------------------------------------
+    # 4️⃣ Final merge
+    # ----------------------------------------------
     output_stream = BytesIO()
     merger.write(output_stream)
     merger.close()
@@ -347,6 +351,7 @@ if full_checklist_data:
     }
 
 
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -355,6 +360,7 @@ def health():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
 
