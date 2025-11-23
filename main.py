@@ -62,7 +62,31 @@ class DocumentFile(BaseModel):
 class MergeRequest(BaseModel):
     files: List[DocumentFile]
     output_name: str = "merged_dcl.pdf"
+    checklist: dict | None = None
 
+
+
+from docx import Document
+
+def generate_checklist_pdf(checklist: dict) -> bytes:
+    template_path = "templates/DCL_Template.docx"
+
+    doc = Document(template_path)
+
+    # Replace placeholders {{field}}
+    for p in doc.paragraphs:
+        for key, value in checklist.items():
+            placeholder = "{{" + key + "}}"
+            if placeholder in p.text:
+                p.text = p.text.replace(placeholder, str(value))
+
+    temp_doc = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+    doc.save(temp_doc.name)
+
+    pdf_bytes = convert_docx_to_pdf(open(temp_doc.name, "rb").read())
+    os.remove(temp_doc.name)
+
+    return pdf_bytes
 
 # ==========================================
 # File Type Detection
@@ -235,7 +259,16 @@ async def merge_pdfs(request: MergeRequest):
 
     merger = PdfWriter()
     conversions = {}
-
+    
+    # 1️⃣ Add the checklist PDF FIRST (if provided)
+    if request.checklist:
+        try:
+            checklist_pdf = generate_checklist_pdf(request.checklist)
+            merger.append(BytesIO(checklist_pdf))
+            logging.info("Checklist PDF added successfully.")
+        except Exception as e:
+            raise HTTPException(500, f"Checklist PDF generation failed: {e}")
+            
     for f in request.files:
 
         try:
@@ -295,4 +328,5 @@ def health():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
