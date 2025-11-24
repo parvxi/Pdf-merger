@@ -68,19 +68,25 @@ class MergeRequest(BaseModel):
 # ==========================================
 def replace_placeholders(doc, data):
 
+    def _clear_runs(p):
+        for r in p.runs:
+            r.text = ""
+
     def _replace_in_paragraphs(paragraphs):
         for p in paragraphs:
+            # Merge all runs into ONE string
+            combined = "".join(run.text for run in p.runs)
+
+            # Perform replacements
             for key, value in data.items():
-                placeholder = "{{" + key + "}}"
+                combined = combined.replace("{{" + key + "}}", str(value))
 
-                if placeholder in p.text:
-                    # Fix split runs: rebuild full text
-                    new_text = p.text.replace(placeholder, str(value))
-
-                    # Remove all runs and set text once
-                    for run in p.runs:
-                        run.text = ""
-                    p.runs[0].text = new_text
+            # Rewrite paragraph
+            if p.runs:
+                _clear_runs(p)
+                p.runs[0].text = combined
+            else:
+                p.add_run(combined)
 
     def _replace_in_tables(tables):
         for table in tables:
@@ -88,18 +94,13 @@ def replace_placeholders(doc, data):
                 for cell in row.cells:
                     _replace_in_paragraphs(cell.paragraphs)
 
-    # ----------------------------
     # BODY
-    # ----------------------------
     _replace_in_paragraphs(doc.paragraphs)
     _replace_in_tables(doc.tables)
 
-    # ----------------------------
-    # FOOTER ONLY (header skipped)
-    # ----------------------------
+    # FOOTER ONLY
     for section in doc.sections:
         footer = section.footer
-
         _replace_in_paragraphs(footer.paragraphs)
         _replace_in_tables(footer.tables)
 
@@ -363,4 +364,5 @@ def health():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
