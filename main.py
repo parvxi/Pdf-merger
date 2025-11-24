@@ -74,19 +74,51 @@ from docx import Document
 def replace_placeholders(doc, data):
     # Replace in normal paragraphs
     for p in doc.paragraphs:
-        for key, value in data.items():
-            placeholder = "{{" + key + "}}"
-            if placeholder in p.text:
-                p.text = p.text.replace(placeholder, str(value))
+        replace_in_runs(p.runs, data)
 
     # Replace inside tables
     for table in doc.tables:
         for row in table.rows:
             for cell in row.cells:
-                for key, value in data.items():
-                    placeholder = "{{" + key + "}}"
-                    if placeholder in cell.text:
-                        cell.text = cell.text.replace(placeholder, str(value))
+                for p in cell.paragraphs:
+                    replace_in_runs(p.runs, data)
+
+    # Replace inside headers
+    for section in doc.sections:
+        header = section.header
+        for p in header.paragraphs:
+            replace_in_runs(p.runs, data)
+        for table in header.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    for p in cell.paragraphs:
+                        replace_in_runs(p.runs, data)
+
+    # Replace inside footers
+    for section in doc.sections:
+        footer = section.footer
+        for p in footer.paragraphs:
+            replace_in_runs(p.runs, data)
+        for table in footer.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    for p in cell.paragraphs:
+                        replace_in_runs(p.runs, data)
+
+
+def replace_in_runs(runs, data):
+    full_text = "".join(run.text for run in runs)
+
+    for key, value in data.items():
+        placeholder = "{{" + key + "}}"
+        full_text = full_text.replace(placeholder, str(value))
+
+    # Clear runs
+    for r in runs:
+        r.text = ""
+    if runs:
+        runs[0].text = full_text
+
                         
 def generate_checklist_pdf(full_data: dict) -> bytes:
     template_path = "templates/DCL_Template.docx"
@@ -377,6 +409,7 @@ def health():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
 
