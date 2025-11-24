@@ -67,43 +67,46 @@ class MergeRequest(BaseModel):
 # DOCX Placeholder Replacement
 # ==========================================
 def replace_placeholders(doc, data):
+    
+    def replace_in_paragraph(p):
+        # Merge all runs into one text block
+        full_text = "".join(run.text for run in p.runs)
 
-    def _clear_runs(p):
-        for r in p.runs:
-            r.text = ""
+        # Apply all replacements
+        for key, value in data.items():
+            full_text = full_text.replace("{{" + key + "}}", str(value))
 
-    def _replace_in_paragraphs(paragraphs):
-        for p in paragraphs:
-            # Merge all runs into ONE string
-            combined = "".join(run.text for run in p.runs)
+        # Clear all runs and write final text
+        for run in p.runs:
+            run.text = ""
+        if p.runs:
+            p.runs[0].text = full_text
+        else:
+            p.add_run(full_text)
 
-            # Perform replacements
-            for key, value in data.items():
-                combined = combined.replace("{{" + key + "}}", str(value))
+    def replace_in_table(table):
+        for row in table.rows:
+            for cell in row.cells:
+                for p in cell.paragraphs:
+                    replace_in_paragraph(p)
+                for t2 in cell.tables:
+                    replace_in_table(t2)
 
-            # Rewrite paragraph
-            if p.runs:
-                _clear_runs(p)
-                p.runs[0].text = combined
-            else:
-                p.add_run(combined)
+    # BODY paragraphs
+    for p in doc.paragraphs:
+        replace_in_paragraph(p)
 
-    def _replace_in_tables(tables):
-        for table in tables:
-            for row in table.rows:
-                for cell in row.cells:
-                    _replace_in_paragraphs(cell.paragraphs)
+    # BODY tables
+    for t in doc.tables:
+        replace_in_table(t)
 
-    # BODY
-    _replace_in_paragraphs(doc.paragraphs)
-    _replace_in_tables(doc.tables)
-
-    # FOOTER ONLY
+    # FOOTER paragraphs
     for section in doc.sections:
         footer = section.footer
-        _replace_in_paragraphs(footer.paragraphs)
-        _replace_in_tables(footer.tables)
-
+        for p in footer.paragraphs:
+            replace_in_paragraph(p)
+        for t in footer.tables:
+            replace_in_table(t)
 
 def generate_checklist_pdf(full_data: dict) -> bytes:
     template_path = "templates/DCL_Template.docx"
@@ -364,5 +367,6 @@ def health():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
