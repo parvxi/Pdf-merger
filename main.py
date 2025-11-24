@@ -67,21 +67,41 @@ class MergeRequest(BaseModel):
 # DOCX Placeholder Replacement
 # ==========================================
 def replace_placeholders(doc, data):
-    # Replace in paragraphs
-    for p in doc.paragraphs:
-        for key, value in data.items():
-            placeholder = "{{" + key + "}}"
-            if placeholder in p.text:
-                p.text = p.text.replace(placeholder, str(value))
 
-    # Replace in tables
-    for table in doc.tables:
-        for row in table.rows:
-            for cell in row.cells:
-                for key, value in data.items():
-                    placeholder = "{{" + key + "}}"
-                    if placeholder in cell.text:
-                        cell.text = cell.text.replace(placeholder, str(value))
+    def _replace_in_paragraphs(paragraphs):
+        for p in paragraphs:
+            for key, value in data.items():
+                placeholder = "{{" + key + "}}"
+
+                if placeholder in p.text:
+                    # Fix split runs: rebuild full text
+                    new_text = p.text.replace(placeholder, str(value))
+
+                    # Remove all runs and set text once
+                    for run in p.runs:
+                        run.text = ""
+                    p.runs[0].text = new_text
+
+    def _replace_in_tables(tables):
+        for table in tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    _replace_in_paragraphs(cell.paragraphs)
+
+    # ----------------------------
+    # BODY
+    # ----------------------------
+    _replace_in_paragraphs(doc.paragraphs)
+    _replace_in_tables(doc.tables)
+
+    # ----------------------------
+    # FOOTER ONLY (header skipped)
+    # ----------------------------
+    for section in doc.sections:
+        footer = section.footer
+
+        _replace_in_paragraphs(footer.paragraphs)
+        _replace_in_tables(footer.tables)
 
 
 def generate_checklist_pdf(full_data: dict) -> bytes:
@@ -343,3 +363,4 @@ def health():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
