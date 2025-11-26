@@ -247,6 +247,41 @@ def convert_doc_to_pdf(doc_bytes: bytes) -> bytes:
             os.remove(out_pdf)
 
 
+def convert_xlsx_to_pdf(xlsx_bytes: bytes) -> bytes:
+    """Convert XLSX to PDF using LibreOffice (maintains all formatting)"""
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as temp:
+        temp.write(xlsx_bytes)
+        xlsx_path = temp.name
+
+    out_dir = tempfile.gettempdir()
+    out_pdf = xlsx_path.replace(".xlsx", ".pdf")
+
+    try:
+        subprocess.run(
+            ["libreoffice", "--headless", "--convert-to", "pdf", "--outdir", out_dir, xlsx_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+            timeout=30  # Prevent hanging
+        )
+
+        if not os.path.exists(out_pdf):
+            raise FileNotFoundError(f"LibreOffice failed to create PDF: {out_pdf}")
+
+        with open(out_pdf, "rb") as f:
+            return f.read()
+
+    except subprocess.TimeoutExpired:
+        raise ValueError("Excel conversion timed out (file too large or complex)")
+    except subprocess.CalledProcessError as e:
+        raise ValueError(f"LibreOffice conversion failed: {e.stderr.decode()}")
+    finally:
+        if os.path.exists(xlsx_path):
+            os.remove(xlsx_path)
+        if os.path.exists(out_pdf):
+            os.remove(out_pdf)
+            
+
 def convert_xls_to_pdf(xls_bytes: bytes) -> bytes:
     """Convert XLS to PDF using LibreOffice"""
     with tempfile.NamedTemporaryFile(suffix=".xls", delete=False) as temp:
