@@ -247,43 +247,39 @@ def convert_doc_to_pdf(doc_bytes: bytes) -> bytes:
             os.remove(out_pdf)
 
 
-def convert_xlsx_to_pdf(xlsx_bytes: bytes) -> bytes:
-    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as temp_xlsx:
-        temp_xlsx.write(xlsx_bytes)
-        xlsx_path = temp_xlsx.name
+def convert_xls_to_pdf(xls_bytes: bytes) -> bytes:
+    """Convert XLS to PDF using LibreOffice"""
+    with tempfile.NamedTemporaryFile(suffix=".xls", delete=False) as temp:
+        temp.write(xls_bytes)
+        xls_path = temp.name
 
-    pdf_path = xlsx_path.replace(".xlsx", ".pdf")
+    out_dir = tempfile.gettempdir()
+    out_pdf = xls_path.replace(".xls", ".pdf")
 
     try:
-        wb = openpyxl.load_workbook(xlsx_path)
-        c = canvas.Canvas(pdf_path, pagesize=letter)
-        width, height = letter
+        subprocess.run(
+            ["libreoffice", "--headless", "--convert-to", "pdf", "--outdir", out_dir, xls_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+            timeout=30
+        )
 
-        for sheet in wb.worksheets:
-            c.drawString(80, height - 50, f"Sheet: {sheet.title}")
-            y = height - 100
+        if not os.path.exists(out_pdf):
+            raise FileNotFoundError(f"LibreOffice failed to create PDF: {out_pdf}")
 
-            for row in sheet.iter_rows(max_row=40, max_col=10):
-                row_data = [str(cell.value) if cell.value else "" for cell in row]
-                c.drawString(40, y, " | ".join(row_data)[:150])
-                y -= 20
-                if y < 60:
-                    c.showPage()
-                    y = height - 60
-
-            c.showPage()
-
-        c.save()
-
-        with open(pdf_path, "rb") as f:
+        with open(out_pdf, "rb") as f:
             return f.read()
 
+    except subprocess.TimeoutExpired:
+        raise ValueError("Excel conversion timed out")
+    except subprocess.CalledProcessError as e:
+        raise ValueError(f"LibreOffice conversion failed: {e.stderr.decode()}")
     finally:
-        if os.path.exists(xlsx_path):
-            os.remove(xlsx_path)
-        if os.path.exists(pdf_path):
-            os.remove(pdf_path)
-
+        if os.path.exists(xls_path):
+            os.remove(xls_path)
+        if os.path.exists(out_pdf):
+            os.remove(out_pdf)
 
 # ==========================================
 # Merge Endpoint
@@ -336,7 +332,11 @@ async def merge_pdfs(request: MergeRequest):
 
         elif ftype == "xlsx":
             output = convert_xlsx_to_pdf(file_bytes)
-            conversions[f.name] = "xlsx_to_pdf"
+            conversions[f.name] = "xlsx_to_pdf_libreoffice"
+
+        elif ftype == "xls":
+            output = convert_xls_to_pdf(file_bytes)
+            conversions[f.name] = "xls_to_pdf_libreoffice"
 
         else:
             raise HTTPException(400, f"Unsupported file type: {f.name}")
@@ -367,6 +367,7 @@ def health():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
 
