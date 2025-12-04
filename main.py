@@ -61,6 +61,7 @@ class MergeRequest(BaseModel):
     output_name: str = "merged_dcl.pdf"
     checklist: dict | None = None
     checklistMapped: dict | None = None
+    templateMaster: dict | None = None
 
 
 # ==========================================
@@ -330,7 +331,13 @@ async def merge_pdfs(request: MergeRequest):
     # 1️⃣ Merge checklist (header + activities)
     header = request.checklist or {}
     activities = request.checklistMapped or {}
-    full_checklist_data = {**header, **activities, **template_master}
+    template_master = request.templateMaster or {}
+    
+    full_checklist_data = {
+        **header,
+        **activities,
+        **template_master
+    }
 
     if full_checklist_data:
         try:
@@ -402,6 +409,7 @@ def health():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
 
