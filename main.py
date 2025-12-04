@@ -330,7 +330,7 @@ async def merge_pdfs(request: MergeRequest):
     # 1️⃣ Merge checklist (header + activities)
     header = request.checklist or {}
     activities = request.checklistMapped or {}
-    full_checklist_data = {**header, **activities}
+    full_checklist_data = {**header, **activities, **template_master}
 
     if full_checklist_data:
         try:
@@ -402,6 +402,7 @@ def health():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
 
