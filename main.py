@@ -37,7 +37,7 @@ else:
 app = FastAPI(
     title="DCL PDF Merger API",
     description="Convert ANY uploaded DCL files to PDF and merge",
-    version="3.0.0"
+    version="4.0.0"  # ← UPDATED VERSION
 )
 
 app.add_middleware(
@@ -49,7 +49,7 @@ app.add_middleware(
 )
 
 # ==========================================
-# Pydantic Models
+# Pydantic Models (UPDATED)
 # ==========================================
 class DocumentFile(BaseModel):
     name: str
@@ -59,6 +59,11 @@ class DocumentFile(BaseModel):
 class MergeRequest(BaseModel):
     files: List[DocumentFile]
     output_name: str = "merged_dcl.pdf"
+    
+    # ✅ NEW STRUCTURE - Matches extraction system
+    templateData: dict | None = None  # All 67 fields in one object
+    
+    # ⚠️ DEPRECATED - Keep for backward compatibility only
     checklist: dict | None = None
     checklistMapped: dict | None = None
     templateMaster: dict | None = None
@@ -318,7 +323,7 @@ def convert_xls_to_pdf(xls_bytes: bytes) -> bytes:
             os.remove(out_pdf)
 
 # ==========================================
-# Merge Endpoint
+# Merge Endpoint (UPDATED)
 # ==========================================
 @app.post("/merge-pdfs")
 async def merge_pdfs(request: MergeRequest):
@@ -328,22 +333,30 @@ async def merge_pdfs(request: MergeRequest):
     merger = PdfWriter()
     conversions = {}
 
-    # 1️⃣ Merge checklist (header + activities)
-    header = request.checklist or {}
-    activities = request.checklistMapped or {}
-    template_master = request.templateMaster or {}
-    
-    full_checklist_data = {
-        **header,
-        **activities,
-        **template_master
-    }
+    # ✅ UPDATED: Support both new and old structure
+    if request.templateData:
+        # NEW STRUCTURE (from extraction system)
+        full_checklist_data = request.templateData
+        logger.info("✅ Using NEW templateData structure (67 fields)")
+    else:
+        # OLD STRUCTURE (backward compatibility)
+        header = request.checklist or {}
+        activities = request.checklistMapped or {}
+        template_master = request.templateMaster or {}
+        
+        full_checklist_data = {
+            **header,
+            **activities,
+            **template_master
+        }
+        logger.info("⚠️ Using OLD structure (checklist + checklistMapped + templateMaster)")
 
+    # 1️⃣ Generate and append checklist PDF
     if full_checklist_data:
         try:
             checklist_pdf = generate_checklist_pdf(full_checklist_data)
             merger.append(BytesIO(checklist_pdf))
-            logging.info("Checklist PDF added successfully.")
+            logging.info("✅ Checklist PDF added successfully.")
         except Exception as e:
             raise HTTPException(500, f"Checklist PDF generation failed: {e}")
 
@@ -409,9 +422,3 @@ def health():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
-
-
-
-
-
